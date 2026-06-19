@@ -1,81 +1,59 @@
-Model Design
+* Model Design
 
-Problem Type
+# Prediction Problem
 
+The objective is to predict the value of
+all_motor_vehicles using Birmingham
+Department for Transport traffic count data.
+
+Problem Type:
 Regression
 
-Target Variable
-
+Target Variable:
 all_motor_vehicles
 
-Prediction Goal
+Prediction Horizon:
+Observed hourly traffic counts
 
-Predict the number of motor vehicles travelling past a Birmingham traffic count point during a given hour.
+# Selected Features
 
-Model Comparison Strategy
+The following features were selected:
 
-The project compares explainable computational intelligence with traditional machine learning approaches.
+| Feature | Reason |
+|----------|----------|
+| year | captures long term traffic trends |
+| hour | captures time of day effects |
+| direction_of_travel | captures directional flow |
+| road_type | major vs minor roads |
+| road_name | identifies road characteristics |
+| count_point_id | identifies traffic count location |
+| latitude | geographic information |
+| longitude | geographic information |
+| is_morning_peak | engineered feature |
+| is_evening_peak | engineered feature |
+| is_peak_hour | engineered feature |
 
+# Model Architecture
+
+Data
+ ↓
+Cleaning
+ ↓
+Feature Engineering
+ ↓
+Train Test Split
+ ↓
+Encoding
+ ↓
 Baseline Models
+ ↓
+Genetic Programming
+ ↓
+Evaluation
 
-Linear Regression
-
-Purpose:
-
-* Establish baseline performance.
-
-Random Forest
-
-Purpose:
-
-* Capture non linear relationships.
-
-Gradient Boosting
-
-Purpose:
-
-* Improve predictive performance.
-
-Primary Model
-
-Symbolic Regression
-
-Implemented using Genetic Programming.
-
-Purpose:
-
-* Discover human readable mathematical relationships.
-* Maintain explainability.
-* Compare performance against black box models.
-
-Evaluation Metrics
+# Metrics 
 
 MAE
-
-Mean Absolute Error
-
-Measures average prediction error.
-
 RMSE
-
-Root Mean Squared Error
-
-Penalises larger prediction errors.
-
 R²
 
-Measures proportion of variance explained by the model.
-
-Success Criteria
-
-Minimum target:
-
-* R² > 0.70
-
-Stretch target:
-
-* R² > 0.80
-
-Research objective:
-
-* Achieve competitive performance while maintaining explainability.
