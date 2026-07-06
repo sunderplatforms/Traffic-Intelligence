@@ -109,6 +109,15 @@ Feature importance: impurity-based AND permutation-based
 
 GP's evolved expression reached **length 75** (a deeply nested formula) — see `outputs/gp_expression.txt` for the full symbolic expression.
 
+**Ablation — Random Forest without `count_point_id`:**
+
+| Model variant | MAE | RMSE | R² |
+|---|---|---|---|
+| Full model (with location) | 74.9 | 148.7 | 0.964 |
+| Location excluded | 107.5 | 203.8 | 0.933 |
+
+See **Key Findings (4)** below for interpretation.
+
 ---
 
 ## Key Findings
@@ -124,8 +133,12 @@ Early versions one-hot encoded `count_point_id` (~600 dummy columns). Under grou
 **3. Genetic Programming is competitive but not obviously more interpretable.**
 GP matched Linear Regression's accuracy (R² 0.931) — a genuinely good result. But its winning expression had a **program length of 75**, i.e. a deeply nested formula, not the simple, human-readable equation symbolic regression is often pitched as producing. This is a fair, reportable limitation rather than a failure.
 
-**4. Feature importance needs a bias check.**
-Random Forest's built-in (impurity-based) feature importance is known to be biased toward high-cardinality features. Once `count_point_id` was target-encoded into a single column, it dominated both impurity-based (94.9%) *and* permutation-based importance — confirming location is genuinely the single biggest driver of traffic volume, but also meaning the importance ranking mostly just says "different places have different average traffic." A follow-up ablation (importance recomputed with location excluded) gives a clearer picture of what drives variation *within* a location — road type, hour, and direction.
+**4. Feature importance needs a bias check — and an ablation confirms something more interesting than it first looked.**
+Random Forest's built-in (impurity-based) feature importance is known to be biased toward high-cardinality features. Once `count_point_id` was target-encoded into a single column, it dominated both impurity-based (94.9%) and permutation-based importance, appearing to confirm that exact monitoring location is by far the single biggest driver of traffic volume.
+
+A follow-up ablation — refitting Random Forest with `count_point_id` removed entirely — tells a more precise story. Accuracy only drops from **R² 0.964 (full model) to R² 0.933 (location excluded)**, a gap of just 0.031. In other words, most of what `count_point_id` appeared to be contributing was recoverable from `road_name` and `latitude`/`longitude` alone — once location is removed, **`road_name` becomes the dominant feature (81.7% impurity importance)**, followed by geographic coordinates.
+
+This refines the original conclusion: it isn't granular per-count-point detail that drives traffic flow, but road identity (e.g. the M6 vs a residential side road) and broad geographic position. `count_point_id` was mostly acting as a fine-grained proxy for information already present in `road_name` and coordinates, not contributing large amounts of genuinely new signal.
 
 ---
 

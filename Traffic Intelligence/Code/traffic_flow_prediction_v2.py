@@ -274,37 +274,121 @@ holdout_rows = [
 # ---------------------------------------------------------------------------
 gp_program_str = None
 gp_length = None
+gp_sweep_df = None
 
 if USE_GPLEARN:
     try:
         from gplearn.genetic import SymbolicRegressor
 
-        log("Fitting Genetic Programming (gplearn)...")
-        t_start = time.time()
-        gp = SymbolicRegressor(
-            population_size=GP_POPULATION,
-            generations=GP_GENERATIONS,
-            random_state=RANDOM_STATE,
-            verbose=1,
-            n_jobs=-1,
-        )
-        gp.fit(X_train_processed, y_train)
-        preds_gp = gp.predict(X_test_processed)
-        log(f"GP done in {time.time() - t_start:.1f}s")
+        # A single GP fit optimises purely for accuracy, which is how we got
+        # the length-75 expression previously — accurate, but not read able,
+        # which undercuts the "explainable" pitch of this project.
+        # parsimony_coefficient penalises program length during evolution.
+        # Sweeping it shows the accuracy/complexity tradeoff explicitly,
+        # so we can pick (or report) a genuinely readable expression rather
+        # than just the single most accurate one.
+        PARSIMONY_VALUES = [0.0, 0.001, 0.005, 0.01, 0.05]
 
-        gp_program_str = str(gp._program)
-        gp_length = gp._program.length_
+        sweep_rows = []
+        best_programs = {}
+
+        for pc in PARSIMONY_VALUES:
+            log(f"Fitting GP with parsimony_coefficient={pc}...")
+            t_start = time.time()
+            gp_variant = SymbolicRegressor(
+                population_size=GP_POPULATION,
+                generations=GP_GENERATIONS,
+                parsimony_coefficient=pc,
+                random_state=RANDOM_STATE,
+                verbose=0,
+                n_jobs=-1,
+            )
+            gp_variant.fit(X_train_processed, y_train)
+            preds_variant = gp_variant.predict(X_test_processed)
+            elapsed = time.time() - t_start
+
+            variant_rmse = np.sqrt(mean_squared_error(y_test, preds_variant))
+            variant_r2 = r2_score(y_test, preds_variant)
+            variant_length = gp_variant._program.length_
+
+            sweep_rows.append({
+                "parsimony_coefficient": pc,
+                "program_length": variant_length,
+                "RMSE": variant_rmse,
+                "R2": variant_r2,
+            })
+            best_programs[pc] = str(gp_variant._program)
+            log(f"  parsimony={pc}: length={variant_length}, RMSE={variant_rmse:.1f}, "
+                f"R2={variant_r2:.4f} ({elapsed:.1f}s)")
+
+        gp_sweep_df = pd.DataFrame(sweep_rows)
+        print("\n=== Genetic Programming: parsimony sweep (accuracy vs complexity) ===")
+        print(gp_sweep_df)
+        gp_sweep_df.to_csv(OUTPUT_DIR / "gp_parsimony_sweep.csv", index=False)
+
+        # Use the pc=0.0 run (unconstrained, most accurate) as the headline
+        # GP result for the main comparison table, consistent with before.
+        gp_program_str = best_programs[0.0]
+        gp_length = int(gp_sweep_df.loc[gp_sweep_df["parsimony_coefficient"] == 0.0, "program_length"].iloc[0])
+        preds_gp = None  # recompute below for the headline row using pc=0.0's stored metrics
+        headline_row = gp_sweep_df[gp_sweep_df["parsimony_coefficient"] == 0.0].iloc[0]
 
         holdout_rows.append({
-            "Model": "Genetic Programming",
-            "MAE": mean_absolute_error(y_test, preds_gp),
-            "RMSE": np.sqrt(mean_squared_error(y_test, preds_gp)),
-            "R2": r2_score(y_test, preds_gp),
+            "Model": "Genetic Programming (unconstrained)",
+            "MAE": np.nan,  # not stored per-variant; RMSE/R2 are the comparable figures here
+            "RMSE": headline_row["RMSE"],
+            "R2": headline_row["R2"],
         })
 
-        print("\n=== Genetic Programming discovered expression ===")
+        # Also report the most parsimony-constrained variant as the
+        # "interpretable" candidate for direct comparison.
+        most_constrained = gp_sweep_df.iloc[-1]
+        holdout_rows.append({
+            "Model": f"Genetic Programming (parsimony={most_constrained['parsimony_coefficient']})",
+            "MAE": np.nan,
+            "RMSE": most_constrained["RMSE"],
+            "R2": most_constrained["R2"],
+        })
+
+        print("\n=== Genetic Programming — unconstrained expression (pc=0.0) ===")
         print(gp_program_str)
         print(f"Program length (complexity): {gp_length}")
+
+        print(f"\n=== Genetic Programming — most parsimony-constrained expression "
+              f"(pc={most_constrained['parsimony_coefficient']}) ===")
+        print(best_programs[most_constrained["parsimony_coefficient"]])
+        print(f"Program length (complexity): {int(most_constrained['program_length'])}")
+
+        with open(OUTPUT_DIR / "gp_expression.txt", "w") as f:
+            f.write("=== Unconstrained (pc=0.0) ===\n")
+            f.write(f"{gp_program_str}\n")
+            f.write(f"Length: {gp_length}\n\n")
+            for pc, prog in best_programs.items():
+                if pc == 0.0:
+                    continue
+                row = gp_sweep_df[gp_sweep_df["parsimony_coefficient"] == pc].iloc[0]
+                f.write(f"=== parsimony_coefficient={pc} ===\n")
+                f.write(f"{prog}\n")
+                f.write(f"Length: {int(row['program_length'])}, RMSE: {row['RMSE']:.1f}, R2: {row['R2']:.4f}\n\n")
+
+        # Chart: complexity vs accuracy tradeoff
+        fig, ax1 = plt.subplots(figsize=(9, 5))
+        ax1.plot(gp_sweep_df["parsimony_coefficient"], gp_sweep_df["program_length"],
+                 marker="o", color="tab:blue", label="Program length")
+        ax1.set_xlabel("parsimony_coefficient")
+        ax1.set_ylabel("Program length (complexity)", color="tab:blue")
+        ax1.tick_params(axis="y", labelcolor="tab:blue")
+
+        ax2 = ax1.twinx()
+        ax2.plot(gp_sweep_df["parsimony_coefficient"], gp_sweep_df["RMSE"],
+                 marker="s", color="tab:red", label="RMSE")
+        ax2.set_ylabel("RMSE (vehicles)", color="tab:red")
+        ax2.tick_params(axis="y", labelcolor="tab:red")
+
+        plt.title("Genetic Programming: Complexity vs Accuracy Tradeoff")
+        fig.tight_layout()
+        plt.savefig(OUTPUT_DIR / "gp_parsimony_tradeoff.png", dpi=300)
+        plt.close()
 
     except ImportError:
         print("\n[Skipping Genetic Programming] gplearn is not installed. "
@@ -351,6 +435,74 @@ print(permutation_importance_df.head(10))
 
 impurity_importance_df.to_csv(OUTPUT_DIR / "feature_importance_impurity.csv", index=False)
 permutation_importance_df.to_csv(OUTPUT_DIR / "feature_importance_permutation.csv", index=False)
+
+# ---------------------------------------------------------------------------
+# 7b. Ablation: feature importance with location (count_point_id) excluded
+# ---------------------------------------------------------------------------
+# The target-encoded count_point_id column dominates importance because it
+# directly encodes each location's historical average traffic. That's a
+# correct finding ("location matters most") but not a very informative one
+# on its own. Refitting a model WITHOUT that column shows what actually
+# drives traffic variation within a given location — road type, hour, year,
+# direction — which is the more interesting story for feature analysis.
+log("Running ablation: refitting without count_point_id...")
+
+location_col = "target__count_point_id"
+ablation_cols = [c for c in feature_names if c != location_col]
+ablation_idx = [i for i, c in enumerate(feature_names) if c != location_col]
+
+X_train_ablation = X_train_processed[:, ablation_idx]
+X_test_ablation = X_test_processed[:, ablation_idx]
+
+ablation_rf = RandomForestRegressor(**rf_search.best_params_, random_state=RANDOM_STATE, n_jobs=-1)
+ablation_rf.fit(X_train_ablation, y_train)
+preds_ablation = ablation_rf.predict(X_test_ablation)
+
+print("\n=== Ablation: Random Forest WITHOUT count_point_id ===")
+print(f"MAE : {mean_absolute_error(y_test, preds_ablation):.2f}")
+print(f"RMSE: {np.sqrt(mean_squared_error(y_test, preds_ablation)):.2f}")
+print(f"R2  : {r2_score(y_test, preds_ablation):.4f}")
+print("(Compare to the full model's tuned RF R2 above — the gap is how much "
+      "location alone explains, versus everything else.)")
+
+ablation_impurity_df = pd.DataFrame({
+    "feature": ablation_cols,
+    "importance": ablation_rf.feature_importances_,
+}).sort_values("importance", ascending=False)
+
+t_start = time.time()
+ablation_perm_result = permutation_importance(
+    ablation_rf, X_test_ablation, y_test,
+    n_repeats=10, random_state=RANDOM_STATE, n_jobs=-1,
+)
+log(f"Ablation permutation importance done in {time.time() - t_start:.1f}s")
+
+ablation_perm_df = pd.DataFrame({
+    "feature": ablation_cols,
+    "importance_mean": ablation_perm_result.importances_mean,
+    "importance_std": ablation_perm_result.importances_std,
+}).sort_values("importance_mean", ascending=False)
+
+print("\nTop 10 features (location excluded) — impurity-based importance:")
+print(ablation_impurity_df.head(10))
+print("\nTop 10 features (location excluded) — permutation importance:")
+print(ablation_perm_df.head(10))
+
+ablation_impurity_df.to_csv(OUTPUT_DIR / "feature_importance_impurity_no_location.csv", index=False)
+ablation_perm_df.to_csv(OUTPUT_DIR / "feature_importance_permutation_no_location.csv", index=False)
+
+# Chart: top features with location excluded
+top_ablation_perm = ablation_perm_df.head(15).sort_values("importance_mean")
+plt.figure(figsize=(9, 7))
+plt.barh(
+    top_ablation_perm["feature"], top_ablation_perm["importance_mean"],
+    xerr=top_ablation_perm["importance_std"],
+)
+plt.title("Top 15 Feature Importances — Location (count_point_id) Excluded")
+plt.xlabel("Permutation Importance (RMSE increase when shuffled)")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "feature_importance_no_location.png", dpi=300)
+plt.close()
 
 # ---------------------------------------------------------------------------
 # 8. Charts

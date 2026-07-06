@@ -1,0 +1,13 @@
+feature,importance
+target__road_name,0.8171319812011019
+num__latitude,0.07909693257028773
+num__longitude,0.07298834129530646
+num__year,0.010836497404835277
+num__hour,0.010437088006309407
+num__is_peak_hour,0.0033083774467486146
+onehot__direction_of_travel_N,0.001700756847113008
+onehot__direction_of_travel_S,0.0016022789768282378
+onehot__direction_of_travel_E,0.0015086997349330875
+onehot__direction_of_travel_W,0.0012639916299989732
+onehot__road_type_Major,6.656149692460498e-05
+onehot__road_type_Minor,5.849338961262852e-05
