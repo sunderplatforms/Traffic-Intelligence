@@ -1,90 +1,177 @@
 # Smart Birmingham Traffic Intelligence
-## Explainable Traffic Flow Prediction using Genetic Programming
+### Explainable Traffic Flow Prediction using Genetic Programming
 
 ## Project Overview
 
-This project explores how **Computational Intelligence** can be used to support **smart transportation** by modelling and predicting traffic flow into and out of Birmingham.
+This project explores how **Computational Intelligence** can support **smart transportation** by modelling and predicting traffic flow into and out of Birmingham.
 
-The main focus of the project is to use **Genetic Programming**, through **Symbolic Regression**, to evolve mathematical expressions that can predict traffic flow from road traffic data. Unlike some black-box machine learning models, symbolic regression can produce human-readable formulae, making the model easier to interpret and explain.
+The core focus is **Genetic Programming (GP)**, applied via **Symbolic Regression**, to evolve a mathematical expression that predicts traffic flow directly from road traffic data. Unlike black-box ensemble models, symbolic regression produces a human-readable formula — in principle making the model's reasoning inspectable rather than opaque.
 
-The project is inspired by research in Intelligent Transportation Systems, where traffic modelling and prediction are considered important parts of smart city infrastructure. Research has shown that Genetic Programming can be used for urban traffic modelling by treating traffic prediction as a symbolic regression problem. 
-Birmingham is used as the case study location because public road traffic statistics are available from the Department for Transport. The Birmingham traffic statistics dataset includes long-term road traffic information, count points, vehicle class data, annual average daily flow, directional flow, and raw count data. 
+This is a personal continuation of a university dissertation project, rebuilt with a more rigorous evaluation methodology than the original coursework version (see **Key Findings** below for what changed and why).
+
+Birmingham is the case study location because the Department for Transport publishes long-running, public road traffic count data for the city, covering **1993–2025** across **590 count points**, including vehicle class, directional flow, and raw hourly counts.
 
 ---
 
 ## Project Aim
 
-The aim of this project is to develop an explainable computational intelligence model that can predict traffic flow into and out of Birmingham using road traffic data and Genetic Programming.
+Develop an explainable computational intelligence model that predicts traffic flow into and out of Birmingham using road traffic data and Genetic Programming, and rigorously benchmark it against conventional machine learning baselines.
 
 ---
 
 ## Project Objectives
 
-The main objectives of this project are:
-
-1. Collect and prepare Birmingham road traffic data.
-2. Explore traffic patterns by road, year, vehicle type, and direction.
+1. Collect and prepare Birmingham road traffic count data.
+2. Explore traffic patterns by road, year, hour, and direction of travel.
 3. Build a Genetic Programming symbolic regression model to predict traffic flow.
-4. Compare the Genetic Programming model with traditional machine learning models.
-5. Evaluate model performance using regression metrics such as MAE, RMSE, and R².
-6. Export and visualise the best evolved symbolic expression.
-7. Discuss how the approach could support smart transportation and traffic planning.
+4. Benchmark GP against Linear Regression, Random Forest, and Gradient Boosting.
+5. Evaluate every model using MAE, RMSE, and R², under an evaluation scheme that doesn't let information leak between count points.
+6. Extract and interpret the best evolved symbolic expression, including its complexity.
+7. Identify which features actually drive predictions, correcting for known biases in feature importance methods.
 
 ---
 
 ## Background
 
-Smart transportation is an important part of modern smart city development. Intelligent Transportation Systems aim to improve how transport networks are monitored, managed, and planned.
+Intelligent Transportation Systems treat traffic modelling and prediction as central to smart city infrastructure. Transport for West Midlands' Data Insight programme similarly emphasises data-driven forecasting and nowcasting for transport planning across the region.
 
-Research on Genetic Programming for urban traffic modelling describes intelligent transportation as a key part of smart cities and explains that traffic modelling and prediction are central to Intelligent Transportation Systems. 
-Transport for West Midlands also highlights the importance of data collection, management, analysis, forecasting, and research for transport planning and operations across the West Midlands. Their Data Insight work includes transport data, operational data, traffic counts, vehicle classifications, congestion, road traffic collisions, modelling, forecasting, and nowcasting.
-
-This project uses these ideas to create a simplified but realistic prototype of a traffic prediction system.
+This project builds a simplified but methodologically honest prototype of that kind of system, using Birmingham as the case study.
 
 ---
 
 ## Why Birmingham?
 
-Birmingham is a suitable case study because it is a major UK city with significant traffic movement and publicly available transport data.
+Birmingham is a major UK city with substantial, publicly documented traffic movement. DfT reports **3,738 million vehicle miles** travelled on Birmingham's roads in 2025 alone. The available datasets — count points, vehicle class breakdowns, annual average daily flow, directional flow, and raw counts — make it well suited to a directional traffic-flow prediction task.
 
-The Department for Transport road traffic statistics page for Birmingham states that **3,738 million vehicle miles** were travelled on roads in Birmingham in **2025**. The dataset covers the period **1993 to 2025** and includes **590 count points**. 
-
-Available Birmingham traffic datasets include:
-
-- Count points
-- Traffic by vehicle class
-- Annual average daily flow
-- Annual average daily flow by direction
-- Raw traffic counts
-
-The directional flow dataset is especially useful for this project because it can support analysis of traffic travelling into and out of Birmingham.
 ---
 
 ## Computational Intelligence Approach
 
-This project uses **Genetic Programming**, a type of evolutionary algorithm inspired by natural selection.
-
-In this project, Genetic Programming is used for **Symbolic Regression**. Instead of simply training a model with fixed rules, symbolic regression evolves mathematical expressions over many generations.
-
-The process works as follows:
+Genetic Programming is an evolutionary algorithm that performs symbolic regression:
 
 1. Generate an initial population of random mathematical expressions.
-2. Test each expression against the training data.
-3. Score each expression using a fitness metric such as prediction error.
-4. Select better-performing expressions.
-5. Create new expressions using crossover and mutation.
-6. Repeat the process over multiple generations.
-7. Return the best evolved expression.
+2. Evaluate each expression's prediction error on the training data.
+3. Select better-performing expressions.
+4. Produce new expressions via crossover and mutation.
+5. Repeat over many generations.
+6. Return the best-evolved expression.
 
-This makes the model useful not only for prediction, but also for explainability.
+The appeal is explainability: instead of a black-box prediction, GP can in principle return something like *"traffic flow ≈ f(road type, hour, location)"* as an actual formula.
 
 ---
 
-## Why Symbolic Regression?
+## Methodology / Pipeline
 
-Symbolic Regression is useful because it can discover relationships between input variables and a target variable in the form of a mathematical expression.
+```
+Raw DfT CSV (72,948 rows)
+        ↓
+Cleaning & type fixes (mixed-type columns, count_point_id → categorical)
+        ↓
+Feature engineering (is_morning_peak, is_evening_peak, is_peak_hour)
+        ↓
+Grouped train/test split (grouped by count_point_id — see Key Findings)
+        ↓
+Encoding:
+   - Target encoding  → count_point_id, road_name   (high-cardinality)
+   - One-hot encoding → road_type, direction_of_travel (low-cardinality)
+        ↓
+Baseline models: Linear Regression · Random Forest · Gradient Boosting
+        ↓
+Hyperparameter tuning (RandomizedSearchCV, grouped CV)
+        ↓
+Genetic Programming symbolic regression (gplearn)
+        ↓
+Evaluation: MAE · RMSE · R² (single split AND GroupKFold CV)
+        ↓
+Feature importance: impurity-based AND permutation-based
+```
 
-For example, instead of only producing a prediction such as:
+---
 
-```text
-Predicted traffic flow = 42,000 vehicles
+## Results
+
+**GroupKFold cross-validated performance** (5 folds, grouped by `count_point_id` — this is the realistic "predicting at a new/unseen location" number):
+
+| Model | RMSE | R² |
+|---|---|---|
+| Gradient Boosting | 205.7 | 0.924 |
+| Linear Regression | 203.6 | 0.921 |
+| Random Forest | 217.2 | 0.912 |
+
+**Final holdout comparison** (tuned models + GP, single train/test split):
+
+| Model | MAE | RMSE | R² |
+|---|---|---|---|
+| Random Forest (tuned) | 74.9 | 148.7 | 0.964 |
+| Gradient Boosting (tuned) | 88.7 | 181.0 | 0.947 |
+| Genetic Programming | 98.9 | 206.4 | 0.931 |
+| Linear Regression | 107.0 | 207.4 | 0.931 |
+
+GP's evolved expression reached **length 75** (a deeply nested formula) — see `outputs/gp_expression.txt` for the full symbolic expression.
+
+---
+
+## Key Findings
+
+These are the methodologically important findings from this project — including places where an initial naive approach gave misleading results, and what fixed them.
+
+**1. A single train/test split overstates performance.**
+An ungrouped split gave Random Forest an RMSE of ~117 and R² of 0.978. Grouping by `count_point_id` (so a location's data can't appear in both train and validation) revealed the realistic RMSE is closer to **205–220** — the original split let the model partly memorise each location's typical traffic rather than generalise.
+
+**2. One-hot encoding a high-cardinality location ID breaks Linear Regression on unseen locations.**
+Early versions one-hot encoded `count_point_id` (~600 dummy columns). Under grouped CV, every dummy for an unseen location is zero, causing Linear Regression to extrapolate wildly (RMSE ~3,600, R² ≈ −25.6). Switching to **target encoding** for `count_point_id` and `road_name` fixed this and cut the feature space from 623 columns down to 13.
+
+**3. Genetic Programming is competitive but not obviously more interpretable.**
+GP matched Linear Regression's accuracy (R² 0.931) — a genuinely good result. But its winning expression had a **program length of 75**, i.e. a deeply nested formula, not the simple, human-readable equation symbolic regression is often pitched as producing. This is a fair, reportable limitation rather than a failure.
+
+**4. Feature importance needs a bias check.**
+Random Forest's built-in (impurity-based) feature importance is known to be biased toward high-cardinality features. Once `count_point_id` was target-encoded into a single column, it dominated both impurity-based (94.9%) *and* permutation-based importance — confirming location is genuinely the single biggest driver of traffic volume, but also meaning the importance ranking mostly just says "different places have different average traffic." A follow-up ablation (importance recomputed with location excluded) gives a clearer picture of what drives variation *within* a location — road type, hour, and direction.
+
+---
+
+## Repository Structure
+
+```
+smart-birmingham-traffic-intelligence/
+├── README.md
+├── requirements.txt
+├── .gitignore
+├── data/
+│   └── dft_rawcount_local_authority_id_141.csv   # not committed — see Setup
+├── src/
+│   └── traffic_flow_prediction.py                 # full pipeline (current: v3)
+├── outputs/
+│   ├── cv_results_baseline.csv
+│   ├── holdout_results_tuned.csv
+│   ├── gp_expression.txt
+│   ├── feature_importance_impurity.csv
+│   ├── feature_importance_permutation.csv
+│   └── *.png                                       # comparison & importance charts
+└── notebooks/
+    └── exploration.ipynb                           # optional EDA, kept separate from the pipeline script
+```
+
+---
+
+## Setup
+
+```bash
+git clone <your-repo-url>
+cd smart-birmingham-traffic-intelligence
+pip install -r requirements.txt
+```
+
+Download the Birmingham raw traffic count CSV from the [DfT road traffic statistics site](https://roadtraffic.dft.gov.uk/local-authorities/141) and place it at `data/dft_rawcount_local_authority_id_141.csv`, then update `DATA_PATH` in `src/traffic_flow_prediction.py` if needed.
+
+```bash
+python3 src/traffic_flow_prediction.py
+```
+
+---
+
+## Future Work
+
+- Ablation: permutation importance with `count_point_id` excluded, to isolate within-location drivers.
+- Try a simpler GP constraint (e.g. `parsimony_coefficient`) to push toward shorter, more interpretable expressions, trading a little accuracy for genuine readability.
+- Extend the directional-flow dataset to explicitly model traffic *into* vs *out of* Birmingham, rather than treating direction as a flat categorical feature.
+- Package the pipeline as a small CLI or Streamlit dashboard for interactive exploration.
