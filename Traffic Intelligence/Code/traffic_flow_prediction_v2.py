@@ -83,7 +83,7 @@ GP_POPULATION = 1000
 # Columns with many distinct values -> target encoding
 HIGH_CARDINALITY = ["count_point_id", "road_name"]
 # Columns with few distinct values -> one-hot encoding
-LOW_CARDINALITY_CATEGORICAL = ["road_type", "direction_of_travel"]
+LOW_CARDINALITY_CATEGORICAL = ["road_type", "direction_of_travel", "flow_direction"]
 
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -106,12 +106,89 @@ df["is_morning_peak"] = df["hour"].isin([7, 8, 9]).astype(int)
 df["is_evening_peak"] = df["hour"].isin([16, 17, 18]).astype(int)
 df["is_peak_hour"] = df["hour"].isin([7, 8, 9, 16, 17, 18]).astype(int)
 
+# ---------------------------------------------------------------------------
+# Directional in/out-of-Birmingham feature
+# ---------------------------------------------------------------------------
+# direction_of_travel is only a compass direction (N/S/E/W) — it doesn't say
+# whether that direction means "into Birmingham" or "out of it", since that
+# depends on where the count point sits relative to the city centre. We
+# compute the bearing from the city centre to each count point, compare it
+# to the recorded direction of travel, and classify each observation as:
+#   - inbound  : travelling roughly opposite the centre->point bearing
+#                (i.e. toward the centre)
+#   - outbound : travelling roughly along the centre->point bearing
+#                (i.e. away from the centre)
+#   - lateral  : travelling roughly perpendicular to that bearing
+#                (a ring-road-type movement, neither in nor out)
+BIRMINGHAM_CENTER_LAT = 52.4796
+BIRMINGHAM_CENTER_LON = -1.9026
+
+CARDINAL_OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
+
+
+def bearing_to_cardinal(lat_center, lon_center, lat_point, lon_point):
+    """Nearest compass cardinal (N/E/S/W) from the centre to a point."""
+    d_lat = lat_point - lat_center
+    d_lon = lon_point - lon_center
+    angle = np.degrees(np.arctan2(d_lon, d_lat)) % 360
+    # 4-way cardinal buckets, matching the N/E/S/W categories in the data
+    if angle >= 315 or angle < 45:
+        return "N"
+    elif angle < 135:
+        return "E"
+    elif angle < 225:
+        return "S"
+    else:
+        return "W"
+
+
+df["bearing_cardinal"] = [
+    bearing_to_cardinal(BIRMINGHAM_CENTER_LAT, BIRMINGHAM_CENTER_LON, lat, lon)
+    for lat, lon in zip(df["latitude"], df["longitude"])
+]
+
+
+def classify_flow(direction, bearing_cardinal):
+    if direction == CARDINAL_OPPOSITE.get(bearing_cardinal):
+        return "inbound"
+    elif direction == bearing_cardinal:
+        return "outbound"
+    else:
+        return "lateral"
+
+
+df["flow_direction"] = [
+    classify_flow(d, b) for d, b in zip(df["direction_of_travel"], df["bearing_cardinal"])
+]
+
+print("\nFlow direction counts:")
+print(df["flow_direction"].value_counts())
+
+print("\nMean traffic by flow direction:")
+print(df.groupby("flow_direction")["all_motor_vehicles"].mean())
+
+# Chart: average traffic by hour, split by flow direction — checks for the
+# classic commute asymmetry (inbound AM peak, outbound PM peak)
+hourly_flow = df.groupby(["hour", "flow_direction"])["all_motor_vehicles"].mean().unstack()
+plt.figure(figsize=(10, 6))
+for flow in hourly_flow.columns:
+    plt.plot(hourly_flow.index, hourly_flow[flow], marker="o", label=flow)
+plt.title("Average Traffic Flow by Hour, Split by Direction Relative to Birmingham Centre")
+plt.xlabel("Hour of Day")
+plt.ylabel("Mean All Motor Vehicles")
+plt.legend(title="Flow direction")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "hourly_traffic_by_flow_direction.png", dpi=300)
+plt.close()
+print(f"\nSaved: {OUTPUT_DIR / 'hourly_traffic_by_flow_direction.png'}")
+
 df["count_point_id"] = df["count_point_id"].astype(str)
 
 target = "all_motor_vehicles"
 features = [
     "year", "hour", "count_point_id", "road_type", "road_name",
     "direction_of_travel", "latitude", "longitude", "is_peak_hour",
+    "flow_direction",
 ]
 
 X = df[features]
@@ -388,6 +465,82 @@ if USE_GPLEARN:
         plt.title("Genetic Programming: Complexity vs Accuracy Tradeoff")
         fig.tight_layout()
         plt.savefig(OUTPUT_DIR / "gp_parsimony_tradeoff.png", dpi=300)
+        plt.close()
+
+        # ---------------------------------------------------------------
+        # Robustness check: is the short, accurate pc=0.05 result stable,
+        # or did it just get lucky on one random seed? GP's search is
+        # stochastic, so we refit at a few seeds for both the unconstrained
+        # baseline and the pc=0.05 "interpretable" candidate and compare
+        # the spread of length/RMSE/R2.
+        # ---------------------------------------------------------------
+        ROBUSTNESS_SEEDS = [42, 1, 7, 123, 2024]
+        ROBUSTNESS_PARSIMONY_VALUES = [0.0, 0.05]
+
+        log("Running multi-seed robustness check for GP (pc=0.0 and pc=0.05)...")
+        robustness_rows = []
+        for pc in ROBUSTNESS_PARSIMONY_VALUES:
+            for seed in ROBUSTNESS_SEEDS:
+                t_start = time.time()
+                gp_seed = SymbolicRegressor(
+                    population_size=GP_POPULATION,
+                    generations=GP_GENERATIONS,
+                    parsimony_coefficient=pc,
+                    random_state=seed,
+                    verbose=0,
+                    n_jobs=-1,
+                )
+                gp_seed.fit(X_train_processed, y_train)
+                preds_seed = gp_seed.predict(X_test_processed)
+                seed_rmse = np.sqrt(mean_squared_error(y_test, preds_seed))
+                seed_r2 = r2_score(y_test, preds_seed)
+                seed_length = gp_seed._program.length_
+                robustness_rows.append({
+                    "parsimony_coefficient": pc,
+                    "seed": seed,
+                    "program_length": seed_length,
+                    "RMSE": seed_rmse,
+                    "R2": seed_r2,
+                })
+                log(f"  pc={pc}, seed={seed}: length={seed_length}, RMSE={seed_rmse:.1f}, "
+                    f"R2={seed_r2:.4f} ({time.time() - t_start:.1f}s)")
+
+        robustness_df = pd.DataFrame(robustness_rows)
+        robustness_summary = robustness_df.groupby("parsimony_coefficient").agg(
+            length_mean=("program_length", "mean"),
+            length_std=("program_length", "std"),
+            length_min=("program_length", "min"),
+            length_max=("program_length", "max"),
+            RMSE_mean=("RMSE", "mean"),
+            RMSE_std=("RMSE", "std"),
+            R2_mean=("R2", "mean"),
+            R2_std=("R2", "std"),
+        ).reset_index()
+
+        print("\n=== GP robustness check across 5 random seeds ===")
+        print(robustness_df)
+        print("\n=== Summary (mean ± std across seeds) ===")
+        print(robustness_summary)
+
+        robustness_df.to_csv(OUTPUT_DIR / "gp_robustness_raw.csv", index=False)
+        robustness_summary.to_csv(OUTPUT_DIR / "gp_robustness_summary.csv", index=False)
+
+        # Chart: length and RMSE spread across seeds for each parsimony setting
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+        for pc in ROBUSTNESS_PARSIMONY_VALUES:
+            subset = robustness_df[robustness_df["parsimony_coefficient"] == pc]
+            axes[0].scatter([pc] * len(subset), subset["program_length"], alpha=0.7, s=60)
+            axes[1].scatter([pc] * len(subset), subset["RMSE"], alpha=0.7, s=60)
+        axes[0].set_title("Program Length Across 5 Seeds")
+        axes[0].set_xlabel("parsimony_coefficient")
+        axes[0].set_ylabel("Program length")
+        axes[0].set_xticks(ROBUSTNESS_PARSIMONY_VALUES)
+        axes[1].set_title("RMSE Across 5 Seeds")
+        axes[1].set_xlabel("parsimony_coefficient")
+        axes[1].set_ylabel("RMSE (vehicles)")
+        axes[1].set_xticks(ROBUSTNESS_PARSIMONY_VALUES)
+        plt.tight_layout()
+        plt.savefig(OUTPUT_DIR / "gp_robustness_spread.png", dpi=300)
         plt.close()
 
     except ImportError:

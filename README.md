@@ -140,9 +140,29 @@ A follow-up ablation — refitting Random Forest with `count_point_id` removed e
 
 This refines the original conclusion: it isn't granular per-count-point detail that drives traffic flow, but road identity (e.g. the M6 vs a residential side road) and broad geographic position. `count_point_id` was mostly acting as a fine-grained proxy for information already present in `road_name` and coordinates, not contributing large amounts of genuinely new signal.
 
----
+**5. A parsimony-constrained Genetic Programming run found a genuinely interpretable formula, with minimal accuracy cost.**
+The unconstrained GP run (as reported above) produced a 279-node expression achieving R² 0.931 — accurate, but no more readable than a black box. Sweeping `parsimony_coefficient` (which penalises program length during evolution) across `[0.0, 0.001, 0.005, 0.01, 0.05]` found a dramatically shorter alternative at `parsimony_coefficient=0.05`: a **5-node expression achieving R² 0.926** — a drop of only 0.6 percentage points in R² for a **98% reduction in complexity** (279 nodes → 5).
 
-## Repository Structure
+That expression, translated into feature names, is:
+
+```
+predicted_traffic ≈ location_average − (is_major_road × latitude)
+```
+
+Since Birmingham's latitude is ~52.5, the second term is effectively a near-constant downward adjustment applied only to major roads. In plain terms, GP rediscovered a simple, explainable rule: *predict each location's historical average traffic, with a fixed adjustment for major roads* — a genuinely human-readable model, not a black box. This is the strongest evidence in the project for the "explainable computational intelligence" aim stated at the outset.
+
+One caveat: the length-vs-accuracy relationship was not perfectly monotonic across the sweep (`parsimony_coefficient=0.01` produced a *longer* expression, 173 nodes, than `0.001`'s 75 nodes, with worse RMSE too) — a hint that single runs at each setting might not be representative. A follow-up multi-seed robustness check confirmed this suspicion, with an important result of its own:
+
+**Multi-seed robustness check (5 random seeds each):**
+
+| Setting | Length (mean ± std, range) | R² (mean ± std) |
+|---|---|---|
+| Unconstrained (pc=0.0) | 165 ± 132 (range: 53–335) | 0.9306 ± 0.0025 |
+| Parsimony-constrained (pc=0.05) | 6.6 ± 3.6 (range: 5–13) | 0.9266 ± 0.0011 |
+
+Accuracy is stable across seeds either way (R² varies by <0.003). But **complexity is wildly seed-dependent without parsimony pressure** — the unconstrained run swings from 53 to 335 nodes purely based on random seed, meaning the original 279-node expression wasn't a meaningful, reproducible result — it was one arbitrary point in a huge range. With `parsimony_coefficient=0.05`, complexity reliably stays small (5–13 nodes) across every seed tested, at a cost of only 0.004 mean R².
+
+**This is the project's strongest methodological finding**: symbolic regression's much-advertised interpretability is not automatic. Left unconstrained, GP's output complexity is essentially arbitrary and unreproducible even though its accuracy is stable. Interpretability had to be actively enforced via parsimony pressure — and once enforced, it was achieved reliably, at a small and consistent accuracy cost.
 
 ```
 smart-birmingham-traffic-intelligence/
