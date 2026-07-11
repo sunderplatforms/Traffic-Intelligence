@@ -571,7 +571,9 @@ log("Computing permutation importance...")
 t_start = time.time()
 perm_result = permutation_importance(
     tuned_rf, X_test_processed, y_test,
-    n_repeats=10, random_state=RANDOM_STATE, n_jobs=-1,
+    n_repeats=10, random_state=RANDOM_STATE, n_jobs=1,  # single-threaded: avoids joblib
+                                                          # memmapping the model to disk,
+                                                          # which can fail if disk space is low
 )
 log(f"Permutation importance done in {time.time() - t_start:.1f}s")
 
@@ -626,7 +628,7 @@ ablation_impurity_df = pd.DataFrame({
 t_start = time.time()
 ablation_perm_result = permutation_importance(
     ablation_rf, X_test_ablation, y_test,
-    n_repeats=10, random_state=RANDOM_STATE, n_jobs=-1,
+    n_repeats=10, random_state=RANDOM_STATE, n_jobs=1,
 )
 log(f"Ablation permutation importance done in {time.time() - t_start:.1f}s")
 

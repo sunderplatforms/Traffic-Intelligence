@@ -164,47 +164,102 @@ Accuracy is stable across seeds either way (R² varies by <0.003). But **complex
 
 **This is the project's strongest methodological finding**: symbolic regression's much-advertised interpretability is not automatic. Left unconstrained, GP's output complexity is essentially arbitrary and unreproducible even though its accuracy is stable. Interpretability had to be actively enforced via parsimony pressure — and once enforced, it was achieved reliably, at a small and consistent accuracy cost.
 
+---
+
+## Extension: Junction-Level Traffic Prediction
+
+The original project aim was framed around traffic "into and out of Birmingham" generally. This extension takes that idea further: predicting traffic on the links connected to **specific named junctions**, using the trained model rather than historical averages — closer to the eventual goal of a junction-level traffic simulation tool.
+
+### Scope
+
+Only **31.9% of rows** (23,268 of 72,948) have both `start_junction_road_name` and `end_junction_road_name` populated — DfT only records junction endpoints for classified roads (A-roads and motorways), not minor streets. Within that subset:
+
+- **170 distinct links** (count points), forming **172 near-unique (road, start-junction, end-junction) combinations** — only 10 count points had ambiguous multiple link definitions.
+- Covers **23 major named roads**.
+
+This means the junction tool covers Birmingham's major road network specifically, not every street — a real and honest scope limitation, not a shortcoming to hide.
+
+### Two data-quality fixes found while building the graph
+
+1. **Inconsistent road naming fragmented a single road into two identities** — e.g. `A38M` and `A38(M)` (the Aston Expressway) appeared as separate `road_name` values, which would have split one continuous road into two disconnected graph identities. Fixed by canonicalizing road names (stripping punctuation/case before comparison) and merging variants.
+2. **A pervasive, structural ambiguity in junction labels — not just the one-off "LA Boundary" case.** Birmingham's A4040 (the Middle Ring Road) is crossed by nearly every major radial route (A38, A34, A41, A452, etc.) at *different* points around the ring, but DfT's junction label just names the crossing road ("meets the A4040") without saying where. A systematic check (`check_generic_junctions.py`, which measures the geographic spread of count points sharing each junction label) found this pattern affected **24 different labels**, not one — including A38, A34, A41, A4040, A452, A453, A441, A47, A4540, and more, with spreads up to 24km across as many as 11 different roads. The fix generalizes the original "LA Boundary" patch: **any junction label matching a known road name in the dataset is treated as generic and qualified by the road using it as an endpoint** (e.g. `A4040 (via A34)`, `A4040 (via A38)`), rather than hardcoding one label. After the fix, the graph grew from 126 to **194 junction nodes** (169 links), with the top-traffic ranking now dominated by genuinely specific locations (`Park Circus B4132 Waterlinks Boulevard`, `B4217`, `A4040 Wheelwright Road`, `A456/A457 roundabout`) instead of ambiguous bare road names absorbing traffic from many unrelated physical points.
+
+**Known residual limitation**: bare motorway junction *numbers* (e.g. "5", "6" for the M6) are not covered by this fix, since they don't match a road name. The systematic check still found "6" has a 7.17km spread even with only the M6 referencing it — the same road reusing a bare number at more than one distinct point, rather than multiple roads sharing a label. This is a smaller-scale, lower-priority edge case left undisambiguated; documented here rather than chased further, since the returns from fixing it are marginal compared to the fix already applied.
+
+### Two-stage build
+
+- **`check_generic_junctions.py`** — the systematic diagnostic described above: computes the geographic spread of count points sharing each junction label and flags any label that's likely generic/ambiguous, rather than relying on spotting issues manually one at a time.
+- **`junction_network.py`** — builds the graph (junctions as nodes, links as edges) and computes a baseline network using **historical average traffic** per link. Produces `outputs/junction_network.png`, `junction_link_summary.csv`, and `junction_totals.csv`.
+- **`junction_predictor.py`** — extends this by predicting traffic with the trained Random Forest model for **any chosen year and hour**, instead of a historical average, then aggregates predictions across every link touching a chosen junction. Exposes a reusable `predict_junction_traffic(junction_name, year, hour, ...)` function.
+- **`junction_cli.py`** — an interactive command-line front-end for the above: trains the model once, then lets you repeatedly type a junction name, year, and hour and see the predicted breakdown immediately, without editing any code. This is the recommended way to actually explore the tool.
+
+### Honest limitations
+
+- **Not a geographic map.** Junction node positions use a force-directed layout, not real coordinates — the data identifies junctions by name, not by their own lat/long.
+- **No turning-movement split.** The tool predicts total volume on each link touching a junction; it cannot say what proportion of that traffic turns left/right/continues straight, since DfT's raw counts don't include turning-movement data. A true simulation with that level of detail would need additional geometry and signal-timing data this dataset doesn't provide.
+- **`flow_direction` (inbound/outbound/lateral) is relative to Birmingham's centre, not the specific junction being queried** — an approximate directional signal, not a precise "traffic arriving from the north at this exact junction" figure.
+- **The two tools' totals are not directly comparable.** `junction_network.py`'s baseline averages both directions of travel *together* into one number per link; `junction_predictor.py` predicts each direction separately and sums them, and represents one specific hour rather than an all-hours average. Report these as distinct metrics, not the same thing measured twice.
+
+### Example result — a genuine model validation, not just a number
+
+At the A41 junction, one link (count point 7927, the A4540) showed westbound/inbound traffic exceeding eastbound/outbound at 8am (675.9 vs 594.8), which **flipped by 5pm** (outbound 678.8 vs inbound 641.4) — the classic AM-commute-in / PM-commute-out pattern, emerging from the model itself rather than being hand-coded. This isn't universal across every link (e.g. the A4400 near A38 stayed outbound-dominant at both times, which is also plausible — not every road carries a symmetric commuter flow), but it's a meaningful qualitative sanity check that the model captures real directional time-of-day structure.
+
+---
+
+## Repository Structure
+
+This reflects the actual current layout (Alex's working setup), rather than a from-scratch ideal structure — safer than a risky physical reorganization given several scripts have hardcoded `DATA_PATH` values.
+
 ```
-smart-birmingham-traffic-intelligence/
-├── README.md
-├── requirements.txt
-├── .gitignore
-├── data/
-│   └── dft_rawcount_local_authority_id_141.csv   # not committed — see Setup
-├── src/
-│   └── traffic_flow_prediction.py                 # full pipeline (current: v3)
-├── outputs/
-│   ├── cv_results_baseline.csv
-│   ├── holdout_results_tuned.csv
-│   ├── gp_expression.txt
-│   ├── feature_importance_impurity.csv
-│   ├── feature_importance_permutation.csv
-│   └── *.png                                       # comparison & importance charts
-└── notebooks/
-    └── exploration.ipynb                           # optional EDA, kept separate from the pipeline script
+FYP v.2/                                       <- run scripts from here; outputs/ lands here
+├── outputs/                                    generated charts, CSVs, gp_expression.txt
+└── Traffic Intelligence/
+    ├── dft_rawcount_local_authority_id_141.csv
+    └── Code/
+        ├── traffic_flow_prediction.py          main pipeline (rename from _v2.py/_v3.py for clarity —
+        │                                        see note below)
+        ├── junction_network.py                 historical junction network (baseline)
+        ├── junction_predictor.py               model-based junction traffic predictor
+        ├── junction_cli.py                     interactive CLI front-end for the above
+        ├── check_generic_junctions.py           systematic check for generic/ambiguous junction labels
+        └── check_junctions.py                  one-off diagnostic (junction field coverage)
 ```
+
+**One safe rename worth doing**, purely for clarity (this is just a filename, so it's low-risk):
+
+```bash
+cd "/Users/Alex/Documents/FYP v.2/Traffic Intelligence/Code"
+mv traffic_flow_prediction_v2.py traffic_flow_prediction.py
+```
+
+(The file has accumulated several rounds of fixes over the course of this project — GroupKFold evaluation, target encoding, the feature-importance ablation, GP parsimony sweep, multi-seed robustness, and the `flow_direction` feature — so despite the `_v2` filename, it reflects the final, most rigorous version. Renaming it removes that confusion for anyone reading the repo later, including yourself.)
 
 ---
 
 ## Setup
 
 ```bash
-git clone <your-repo-url>
-cd smart-birmingham-traffic-intelligence
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
-Download the Birmingham raw traffic count CSV from the [DfT road traffic statistics site](https://roadtraffic.dft.gov.uk/local-authorities/141) and place it at `data/dft_rawcount_local_authority_id_141.csv`, then update `DATA_PATH` in `src/traffic_flow_prediction.py` if needed.
+The raw CSV should already be at `Traffic Intelligence/dft_rawcount_local_authority_id_141.csv` (downloaded from the [DfT road traffic statistics site](https://roadtraffic.dft.gov.uk/local-authorities/141)). If it moves, update `DATA_PATH` at the top of each script — each one currently hardcodes the same absolute path.
+
+Run from the `FYP v.2` folder (so `outputs/` lands in the right place):
 
 ```bash
-python3 src/traffic_flow_prediction.py
+python3 "Traffic Intelligence/Code/traffic_flow_prediction.py"   # main pipeline
+python3 "Traffic Intelligence/Code/junction_network.py"          # junction baseline network
+python3 "Traffic Intelligence/Code/junction_predictor.py"        # junction traffic predictor
 ```
 
 ---
 
 ## Future Work
 
-- Ablation: permutation importance with `count_point_id` excluded, to isolate within-location drivers.
-- Try a simpler GP constraint (e.g. `parsimony_coefficient`) to push toward shorter, more interpretable expressions, trading a little accuracy for genuine readability.
-- Extend the directional-flow dataset to explicitly model traffic *into* vs *out of* Birmingham, rather than treating direction as a flat categorical feature.
-- Package the pipeline as a small CLI or Streamlit dashboard for interactive exploration.
+- ~~Ablation: permutation importance with `count_point_id` excluded~~ — done; see Key Findings (4).
+- ~~Try a parsimony-constrained GP for a shorter, more interpretable expression~~ — done; see Key Findings (5).
+- ~~Extend to directional in/out-of-Birmingham modelling~~ — done via `flow_direction`; see the feature engineering in `traffic_flow_prediction.py`.
+- ~~Junction-level traffic prediction~~ — done; see the Extension section above.
+- A true turning-movement breakdown at junctions, if compatible signal/geometry data becomes available.
+- Package the junction predictor as a small interactive tool (CLI or simple web app) so junctions/year/hour can be queried without editing code.
+- Re-run the GP parsimony sweep and robustness check with more random seeds per setting for a smoother, more statistically robust tradeoff curve.
