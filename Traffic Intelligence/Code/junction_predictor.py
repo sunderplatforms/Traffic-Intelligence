@@ -87,6 +87,7 @@ def disambiguate_junction(junction_name, road_name, known_road_names_canonical):
     is_generic = (
         canonical_road_name(label) in known_road_names_canonical
         or label.lower() in GENERIC_JUNCTION_LABELS
+        or label.isdigit()
     )
     if is_generic:
         return f"{label} (via {road_name})"
