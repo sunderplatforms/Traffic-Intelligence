@@ -260,6 +260,8 @@ python3 "Traffic Intelligence/Code/junction_predictor.py"        # junction traf
 - ~~Try a parsimony-constrained GP for a shorter, more interpretable expression~~ — done; see Key Findings (5).
 - ~~Extend to directional in/out-of-Birmingham modelling~~ — done via `flow_direction`; see the feature engineering in `traffic_flow_prediction.py`.
 - ~~Junction-level traffic prediction~~ — done; see the Extension section above.
-- A true turning-movement breakdown at junctions, if compatible signal/geometry data becomes available.
-- Package the junction predictor as a small interactive tool (CLI or simple web app) so junctions/year/hour can be queried without editing code.
-- Re-run the GP parsimony sweep and robustness check with more random seeds per setting for a smoother, more statistically robust tradeoff curve.
+- ~~A true turning-movement breakdown at junctions~~ — not currently feasible; DfT's raw counts don't include the turning-movement or signal-timing data this would require. Documented as a permanent scope limitation rather than a to-do.
+- ~~Package the junction predictor as a small interactive tool~~ — done via `junction_cli.py`.
+- Re-run the GP parsimony sweep and robustness check with more random seeds per setting, for a smoother, more statistically robust tradeoff curve.
+- Resolve the remaining M6 junction-number edge case (the same road, "6", reusing a bare number at two points 7.17km apart) — low priority given its small traffic footprint relative to the fix already applied.
+- Integrate `check_generic_junctions.py` as a validation step that runs automatically before `junction_network.py` builds the graph, rather than as a separate manual script — would catch this class of issue automatically on any future data update.
