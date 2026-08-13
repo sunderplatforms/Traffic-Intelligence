@@ -87,14 +87,3 @@ Responsibilities:
 * Traffic predictions
 * Road comparisons
 * Model performance visualisation
-
-Platform Layer
-
-Deployment and operations layer.
-
-Responsibilities:
-
-* Docker
-* Kubernetes
-* CI/CD
-* Monitoring

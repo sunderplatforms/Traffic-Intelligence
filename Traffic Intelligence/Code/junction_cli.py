@@ -261,7 +261,7 @@ def main():
             continue
 
         try:
-            year_input = input("  Year (e.g. 2025): ").strip()
+            year_input = input("  Year (e.g. 2026): ").strip()
             hour_input = input("  Hour, 0-23 (e.g. 8): ").strip()
             year = int(year_input)
             hour = int(hour_input)
