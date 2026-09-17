@@ -1,4 +1,20 @@
-GP program:
+=== Unconstrained (pc=0.0) ===
 add(X3, sub(X14, div(sub(sub(X14, sub(add(X10, X2), X14)), sub(X8, X14)), add(div(add(X3, sub(X14, div(sub(mul(X14, X11), div(add(sub(X14, sub(X8, sub(add(X3, sub(X14, div(sub(mul(X14, X11), add(X3, sub(X14, div(sub(mul(X14, X11), div(add(sub(X14, sub(X8, sub(add(X3, sub(X14, div(sub(mul(X14, X11), div(add(sub(X14, sub(X8, sub(sub(X14, sub(div(add(X3, X14), X10), X14)), add(X10, X2)))), X14), X10)), div(add(0.945, X8), add(X10, X8))))), add(X10, X2)))), X14), X10)), div(add(0.945, X8), add(X10, X8)))))), div(add(0.945, X8), add(X10, X8))))), div(add(div(add(sub(X14, sub(X8, sub(add(X3, sub(X14, div(sub(mul(X14, X11), div(add(sub(X14, sub(X8, sub(sub(X14, sub(div(add(div(0.971, X3), X14), X10), X14)), sub(X14, div(sub(sub(X14, sub(div(add(X3, X14), X10), X14)), sub(X8, X14)), add(div(add(X3, sub(X14, div(sub(mul(X14, X11), div(add(sub(X14, sub(X8, sub(add(X3, X10), add(X10, X2)))), X14), X10)), div(add(0.945, X8), add(X10, X8))))), add(X10, X2)), X2)))))), X14), X10)), div(add(0.945, X8), add(X10, X8))))), add(X10, X2)))), X14), X10), X14), X10)))), X14), X10)), div(add(0.945, X8), add(X10, X8))))), add(X10, X2)), X2))))
+Length: 233
 
-Complexity (length): 233
+=== parsimony_coefficient=0.001 ===
+add(X14, sub(-0.344, div(sub(X14, sub(X8, sub(X14, sub(div(add(X3, X14), X10), X14)))), add(div(add(div(add(div(sub(X14, sub(X8, sub(X14, sub(div(add(X14, X10), X10), X14)))), add(div(add(div(add(X14, sub(div(add(X14, add(X3, X14)), X10), X14)), X10), X14), add(X10, X2)), X2)), div(X14, X10)), X10), X14), add(X10, X2)), X2))))
+Length: 67, RMSE: 214.2, R2: 0.9260
+
+=== parsimony_coefficient=0.005 ===
+sub(sub(X14, X10), div(add(X14, add(add(X14, X14), sub(sub(X14, X6), div(X10, X2)))), add(div(add(X14, X14), sub(mul(X4, X4), mul(X4, div(add(X3, X14), add(X2, X2))))), X2)))
+Length: 37, RMSE: 203.2, R2: 0.9334
+
+=== parsimony_coefficient=0.01 ===
+sub(add(X3, X14), div(add(sub(X14, div(X14, X10)), sub(add(X3, X14), div(add(sub(X14, div(X14, X10)), X14), X2))), X2))
+Length: 25, RMSE: 214.9, R2: 0.9255
+
+=== parsimony_coefficient=0.05 ===
+add(X3, add(X3, X14))
+Length: 5, RMSE: 212.2, R2: 0.9274
+

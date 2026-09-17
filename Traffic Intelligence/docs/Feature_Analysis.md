@@ -40,7 +40,7 @@ Refitting without the location column (README Key Finding 4) tells a more precis
 | year | 3.6% | 4.6% |
 | hour | 2.2% | 4.6% |
 
-Accuracy barely drops (R² 0.964 → 0.933, see `Model_Results.md`) once `count_point_id` is removed, and `road_name` immediately takes over as the dominant feature, followed by geographic coordinates. This means most of what `count_point_id` appeared to contribute was **recoverable from road identity and coordinates alone** — it was acting as a fine-grained proxy for information already present elsewhere, not contributing large amounts of genuinely new signal.
+Accuracy barely drops at all (R² 0.974 → 0.970, see `Model_Results.md`) once `count_point_id` is removed, and `road_name` immediately takes over as the dominant feature, followed by geographic coordinates. This means almost all of what `count_point_id` appeared to contribute was **recoverable from road identity and coordinates alone** — it was acting as a fine-grained proxy for information already present elsewhere, not contributing large amounts of genuinely new signal.
 
 ⸻
 

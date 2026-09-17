@@ -472,9 +472,11 @@ print(holdout_results_df)
 
 cv_results_df.to_csv(OUTPUT_DIR / "cv_results_baseline.csv", index=False)
 holdout_results_df.to_csv(OUTPUT_DIR / "holdout_results_tuned.csv", index=False)
-if gp_program_str is not None:
-    with open(OUTPUT_DIR / "gp_expression.txt", "w") as f:
-        f.write(f"GP program:\n{gp_program_str}\n\nComplexity (length): {gp_length}\n")
+# Note: gp_expression.txt (all parsimony variants, with lengths/RMSE/R2 per
+# variant) is already written in full above once the parsimony sweep runs —
+# a second, minimal write used to happen here and silently clobber it down
+# to just the pc=0.0 headline expression, discarding every other variant
+# (including the short, interpretable ones the sweep exists to find).
 
 log(f"Results saved to: {OUTPUT_DIR.resolve()}")
 

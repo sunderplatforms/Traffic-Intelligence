@@ -42,10 +42,10 @@ Ablation — Random Forest without `count_point_id`
 
 | Model variant | MAE | RMSE | R² |
 |---|---:|---:|---:|
-| Full model (with location) | 74.9 | 148.7 | 0.964 |
-| Location excluded | 107.5 | 203.8 | 0.933 |
+| Full model (with location) | 57.6 | 127.7 | 0.974 |
+| Location excluded | 68.7 | 136.9 | 0.970 |
 
-Removing the location identifier only costs 0.031 R² — most of what `count_point_id` seemed to contribute is recoverable from `road_name` and coordinates alone. See `Feature_Analysis.md` and README Key Finding 4.
+Removing the location identifier only costs 0.004 R² — almost all of what `count_point_id` seemed to contribute is recoverable from `road_name` and coordinates alone. See `Feature_Analysis.md` and README Key Finding 4.
 
 ⸻
 
