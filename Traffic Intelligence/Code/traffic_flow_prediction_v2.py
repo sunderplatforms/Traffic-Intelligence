@@ -1,5 +1,5 @@
 """
-Traffic Flow Prediction — v3
+Traffic Flow Prediction — v2
 =============================
 Birmingham DfT raw traffic counts: predicting `all_motor_vehicles`.
 
@@ -33,12 +33,11 @@ What changed from v2, and why:
      are visibly still working rather than looking hung.
 
 Run:
-    python3 traffic_flow_prediction_v3.py
+    python3 traffic_flow_prediction_v2.py
 """
 
 import time
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -50,14 +49,15 @@ from sklearn.model_selection import (
     cross_validate,
     RandomizedSearchCV,
 )
-from sklearn.preprocessing import OneHotEncoder, TargetEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.inspection import permutation_importance
+
+from traffic_common import (
+    DATA_PATH, OUTPUT_DIR, RANDOM_STATE, TARGET, FEATURES,
+    add_engineered_features, build_preprocessor,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -69,8 +69,6 @@ def log(msg):
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-DATA_PATH = "/Users/Alex/Documents/FYP v.2/Traffic Intelligence/dft_rawcount_local_authority_id_141.csv"
-RANDOM_STATE = 42
 TEST_SIZE = 0.2
 N_CV_FOLDS_FINAL = 5        # folds for reported cross-validated metrics
 N_CV_FOLDS_TUNING = 3       # folds used *during* hyperparameter search (cheaper)
@@ -79,14 +77,6 @@ SEARCH_N_JOBS = -1          # parallelism lives at the search level only
 USE_GPLEARN = True
 GP_GENERATIONS = 20
 GP_POPULATION = 1000
-
-# Columns with many distinct values -> target encoding
-HIGH_CARDINALITY = ["count_point_id", "road_name"]
-# Columns with few distinct values -> one-hot encoding
-LOW_CARDINALITY_CATEGORICAL = ["road_type", "direction_of_travel", "flow_direction"]
-
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # 1. Load data
@@ -102,64 +92,11 @@ print(df["all_motor_vehicles"].describe())
 # ---------------------------------------------------------------------------
 # 2. Feature engineering
 # ---------------------------------------------------------------------------
-df["is_morning_peak"] = df["hour"].isin([7, 8, 9]).astype(int)
-df["is_evening_peak"] = df["hour"].isin([16, 17, 18]).astype(int)
-df["is_peak_hour"] = df["hour"].isin([7, 8, 9, 16, 17, 18]).astype(int)
-
-# ---------------------------------------------------------------------------
-# Directional in/out-of-Birmingham feature
-# ---------------------------------------------------------------------------
-# direction_of_travel is only a compass direction (N/S/E/W) — it doesn't say
-# whether that direction means "into Birmingham" or "out of it", since that
-# depends on where the count point sits relative to the city centre. We
-# compute the bearing from the city centre to each count point, compare it
-# to the recorded direction of travel, and classify each observation as:
-#   - inbound  : travelling roughly opposite the centre->point bearing
-#                (i.e. toward the centre)
-#   - outbound : travelling roughly along the centre->point bearing
-#                (i.e. away from the centre)
-#   - lateral  : travelling roughly perpendicular to that bearing
-#                (a ring-road-type movement, neither in nor out)
-BIRMINGHAM_CENTER_LAT = 52.4796
-BIRMINGHAM_CENTER_LON = -1.9026
-
-CARDINAL_OPPOSITE = {"N": "S", "S": "N", "E": "W", "W": "E"}
-
-
-def bearing_to_cardinal(lat_center, lon_center, lat_point, lon_point):
-    """Nearest compass cardinal (N/E/S/W) from the centre to a point."""
-    d_lat = lat_point - lat_center
-    d_lon = lon_point - lon_center
-    angle = np.degrees(np.arctan2(d_lon, d_lat)) % 360
-    # 4-way cardinal buckets, matching the N/E/S/W categories in the data
-    if angle >= 315 or angle < 45:
-        return "N"
-    elif angle < 135:
-        return "E"
-    elif angle < 225:
-        return "S"
-    else:
-        return "W"
-
-
-df["bearing_cardinal"] = [
-    bearing_to_cardinal(BIRMINGHAM_CENTER_LAT, BIRMINGHAM_CENTER_LON, lat, lon)
-    for lat, lon in zip(df["latitude"], df["longitude"])
-]
-
-
-def classify_flow(direction, bearing_cardinal):
-    if direction == CARDINAL_OPPOSITE.get(bearing_cardinal):
-        return "inbound"
-    elif direction == bearing_cardinal:
-        return "outbound"
-    else:
-        return "lateral"
-
-
-df["flow_direction"] = [
-    classify_flow(d, b) for d, b in zip(df["direction_of_travel"], df["bearing_cardinal"])
-]
+# is_morning_peak / is_evening_peak / is_peak_hour, plus flow_direction (the
+# Birmingham-relative inbound/outbound/lateral classification — see
+# traffic_common.add_engineered_features for the bearing-based derivation
+# and rationale).
+add_engineered_features(df)
 
 print("\nFlow direction counts:")
 print(df["flow_direction"].value_counts())
@@ -184,32 +121,14 @@ print(f"\nSaved: {OUTPUT_DIR / 'hourly_traffic_by_flow_direction.png'}")
 
 df["count_point_id"] = df["count_point_id"].astype(str)
 
-target = "all_motor_vehicles"
-features = [
-    "year", "hour", "count_point_id", "road_type", "road_name",
-    "direction_of_travel", "latitude", "longitude", "is_peak_hour",
-    "flow_direction",
-]
+target = TARGET
+features = FEATURES
 
 X = df[features]
 y = df[target]
 groups = df["count_point_id"]
 
-numeric_features = [c for c in features if c not in HIGH_CARDINALITY + LOW_CARDINALITY_CATEGORICAL]
-
-preprocessor = ColumnTransformer([
-    ("num", SimpleImputer(strategy="median"), numeric_features),
-    ("onehot", Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encode", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-    ]), LOW_CARDINALITY_CATEGORICAL),
-    ("target", Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        # target_type="continuous" for a regression target; TargetEncoder
-        # cross-fits internally so fit_transform does not leak y into itself.
-        ("encode", TargetEncoder(target_type="continuous", random_state=RANDOM_STATE)),
-    ]), HIGH_CARDINALITY),
-])
+preprocessor = build_preprocessor()
 
 # ---------------------------------------------------------------------------
 # 3. Grouped train/test split

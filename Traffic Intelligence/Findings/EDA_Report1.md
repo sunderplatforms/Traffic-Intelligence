@@ -1,5 +1,7 @@
 Initial Findings
 
+> **Note (preserved as-written):** This is the project's *first-pass* EDA, from before two later corrections: (1) `A38(M)`/`A38M` were later found to be the same physical road under inconsistent spellings and are merged in all later analysis (see README → Extension: Junction-Level Traffic Prediction), and (2) all model performance numbers below predate the grouped-CV correction in README Key Finding 1 and are known to be optimistic. Kept here unmodified as the "before" half of the project's before/after methodology narrative. For current, corrected figures, see `docs/EDA_Findings.md`, `docs/Model_Results.md`, and the README.
+
 Dataset Size
 
 The Birmingham Raw Traffic Counts dataset contains 72,948 traffic observations collected between 2000 and 2025.

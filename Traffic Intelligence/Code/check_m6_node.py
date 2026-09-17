@@ -1,6 +1,7 @@
 import pandas as pd
 
-DATA_PATH = "/Users/Alex/Documents/FYP v.2/Traffic Intelligence/dft_rawcount_local_authority_id_141.csv"
+from traffic_common import DATA_PATH
+
 df = pd.read_csv(DATA_PATH, low_memory=False)
 
 has_both = df["start_junction_road_name"].notna() & df["end_junction_road_name"].notna()

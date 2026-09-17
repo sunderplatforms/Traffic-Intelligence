@@ -9,7 +9,7 @@ The core focus is **Genetic Programming (GP)**, applied via **Symbolic Regressio
 
 This is a personal continuation of a university dissertation project, rebuilt with a more rigorous evaluation methodology than the original coursework version (see **Key Findings** below for what changed and why).
 
-Birmingham is the case study location because the Department for Transport publishes long-running, public road traffic count data for the city, covering **1993–2025** across **590 count points**, including vehicle class, directional flow, and raw hourly counts.
+Birmingham is the case study location because the Department for Transport publishes long-running, public road traffic count data for the city. The extract used in this project covers **2000–2025** across **562 count points** (72,948 raw hourly observations), including vehicle class, directional flow, and raw hourly counts.
 
 ---
 
@@ -128,7 +128,7 @@ These are the methodologically important findings from this project — includin
 An ungrouped split gave Random Forest an RMSE of ~117 and R² of 0.978. Grouping by `count_point_id` (so a location's data can't appear in both train and validation) revealed the realistic RMSE is closer to **205–220** — the original split let the model partly memorise each location's typical traffic rather than generalise.
 
 **2. One-hot encoding a high-cardinality location ID breaks Linear Regression on unseen locations.**
-Early versions one-hot encoded `count_point_id` (~600 dummy columns). Under grouped CV, every dummy for an unseen location is zero, causing Linear Regression to extrapolate wildly (RMSE ~3,600, R² ≈ −25.6). Switching to **target encoding** for `count_point_id` and `road_name` fixed this and cut the feature space from 623 columns down to 13.
+Early versions one-hot encoded `count_point_id` (~600 dummy columns). Under grouped CV, every dummy for an unseen location is zero, causing Linear Regression to extrapolate wildly (RMSE ~3,600, R² ≈ −25.6). Switching to **target encoding** for `count_point_id` and `road_name` fixed this and cut the feature space from 623 columns down to 16.
 
 **3. Genetic Programming is competitive but not obviously more interpretable.**
 GP matched Linear Regression's accuracy (R² 0.931) — a genuinely good result. But its winning expression had a **program length of 75**, i.e. a deeply nested formula, not the simple, human-readable equation symbolic regression is often pitched as producing. This is a fair, reportable limitation rather than a failure.
@@ -182,7 +182,9 @@ This means the junction tool covers Birmingham's major road network specifically
 ### Two data-quality fixes found while building the graph
 
 1. **Inconsistent road naming fragmented a single road into two identities** — e.g. `A38M` and `A38(M)` (the Aston Expressway) appeared as separate `road_name` values, which would have split one continuous road into two disconnected graph identities. Fixed by canonicalizing road names (stripping punctuation/case before comparison) and merging variants.
-2. **A pervasive, structural ambiguity in junction labels — not just the one-off "LA Boundary" case.** Birmingham's A4040 (the Middle Ring Road) is crossed by nearly every major radial route (A38, A34, A41, A452, etc.) at *different* points around the ring, but DfT's junction label just names the crossing road ("meets the A4040") without saying where. A systematic check (`check_generic_junctions.py`, which measures the geographic spread of count points sharing each junction label) found this pattern affected **24 different labels**, not one — including A38, A34, A41, A4040, A452, A453, A441, A47, A4540, and more, with spreads up to 24km across as many as 11 different roads. The fix generalizes the original "LA Boundary" patch: **any junction label matching a known road name in the dataset is treated as generic and qualified by the road using it as an endpoint** (e.g. `A4040 (via A34)`, `A4040 (via A38)`), rather than hardcoding one label. After the fix, the graph grew from 126 to **194 junction nodes** (169 links), with the top-traffic ranking now dominated by genuinely specific locations (`Park Circus B4132 Waterlinks Boulevard`, `B4217`, `A4040 Wheelwright Road`, `A456/A457 roundabout`) instead of ambiguous bare road names absorbing traffic from many unrelated physical points.
+2. **A pervasive, structural ambiguity in junction labels — not just the one-off "LA Boundary" case.** Birmingham's A4040 (the Middle Ring Road) is crossed by nearly every major radial route (A38, A34, A41, A452, etc.) at *different* points around the ring, but DfT's junction label just names the crossing road ("meets the A4040") without saying where. A systematic check (`check_generic_junctions.py`, which measures the geographic spread of count points sharing each junction label) found this pattern affected **24 different labels**, not one — including A38, A34, A41, A4040, A452, A453, A441, A47, A4540, and more, with spreads up to 24km across as many as 11 different roads. The fix generalizes the original "LA Boundary" patch: **any junction label matching a known road name in the dataset is treated as generic and qualified by the road using it as an endpoint** (e.g. `A4040 (via A34)`, `A4040 (via A38)`), rather than hardcoding one label. After the fix, the graph grew from 126 to **193 junction nodes** (170 links), with the top-traffic ranking now dominated by genuinely specific locations (`Park Circus B4132 Waterlinks Boulevard`, `B4217`, `A4040 Wheelwright Road`, `A456/A457 roundabout`) instead of ambiguous bare road names absorbing traffic from many unrelated physical points. (A separate, one-off data-entry typo in the raw junction labels — `"A456/A457 rooundabout"` vs `"A456/A457 roundabout"` — was also found and corrected, merging what would otherwise have been two nodes for the same physical roundabout.)
+
+**A third fix, found while verifying the above**: the graph was originally built as a plain `networkx.Graph`, which only allows one edge between any two nodes. Since distinct roads can share the same two junction endpoints (e.g. both A38 and A4400 link `A456/A457 roundabout` to `B4100`), a plain `Graph` silently overwrote one link's data whenever this happened — one specific case, discovered by cross-checking `170` link rows against `169` graph edges after a rebuild. Switched to `networkx.MultiGraph`, which represents both links as parallel edges instead of dropping one; the graph now has exactly 170 edges, matching the 170 link rows.
 
 **Known residual limitation**: qualifying a label by the road referencing it only resolves ambiguity when *multiple different roads* share that label — it does not resolve the same road reusing a bare number at more than one distinct point. The M6's bare junction numbers ("5", "6") were relabeled for consistency (`5 (via M6)`, `6 (via M6)`), but the underlying case found by the systematic check — "6" spanning 7.17km even with only the M6 referencing it — remains genuinely unresolved. This is a small, low-priority edge case affecting one motorway's numbering, documented here rather than pursued further given diminishing returns. Notably, after all fixes, the network's top three nodes by total connected traffic are all M6 junctions — a sensible result, since the M6 is Birmingham's dominant motorway corridor.
 
@@ -208,31 +210,31 @@ At the A41 junction, one link (count point 7927, the A4540) showed westbound/inb
 
 ## Repository Structure
 
-This reflects the actual current layout (Alex's working setup), rather than a from-scratch ideal structure — safer than a risky physical reorganization given several scripts have hardcoded `DATA_PATH` values.
-
 ```
-FYP v.2/                                       <- run scripts from here; outputs/ lands here
+FYP v.2/
 ├── outputs/                                    generated charts, CSVs, gp_expression.txt
 └── Traffic Intelligence/
     ├── dft_rawcount_local_authority_id_141.csv
+    ├── docs/                                    architecture, model design/results, feature docs
+    ├── Findings/                                EDA_Report1.md — the project's first-pass EDA,
+    │                                             preserved as the "before" half of the project's
+    │                                             before/after methodology narrative
     └── Code/
-        ├── traffic_flow_prediction.py          main pipeline (rename from _v2.py/_v3.py for clarity —
-        │                                        see note below)
-        ├── junction_network.py                 historical junction network (baseline)
-        ├── junction_predictor.py               model-based junction traffic predictor
-        ├── junction_cli.py                     interactive CLI front-end for the above
-        ├── check_generic_junctions.py           systematic check for generic/ambiguous junction labels
-        └── check_junctions.py                  one-off diagnostic (junction field coverage)
+        ├── traffic_common.py                    shared paths, feature engineering, encoding
+        │                                         pipeline, and junction-graph cleaning — imported
+        │                                         by every script below
+        ├── traffic_flow_prediction_v2.py         main pipeline (see note below on the filename)
+        ├── junction_network.py                   historical junction network (baseline)
+        ├── junction_predictor.py                 model-based junction traffic predictor
+        ├── junction_cli.py                       interactive CLI front-end for the above
+        ├── check_generic_junctions.py            systematic check for generic/ambiguous junction labels
+        ├── check_junctions.py                    one-off diagnostic (junction field coverage)
+        └── check_m6_node.py                      one-off diagnostic (verifying the M6 junction case)
 ```
 
-**One safe rename worth doing**, purely for clarity (this is just a filename, so it's low-risk):
+All `DATA_PATH`/`OUTPUT_DIR` values are now resolved relative to this repository layout (via `traffic_common.py`), not hardcoded to one machine — every script can be run from any working directory.
 
-```bash
-cd "/Users/Alex/Documents/FYP v.2/Traffic Intelligence/Code"
-mv traffic_flow_prediction_v2.py traffic_flow_prediction.py
-```
-
-(The file has accumulated several rounds of fixes over the course of this project — GroupKFold evaluation, target encoding, the feature-importance ablation, GP parsimony sweep, multi-seed robustness, and the `flow_direction` feature — so despite the `_v2` filename, it reflects the final, most rigorous version. Renaming it removes that confusion for anyone reading the repo later, including yourself.)
+**Optional rename, purely cosmetic:** `traffic_flow_prediction_v2.py` could be renamed to drop the `_v2` suffix, since — despite the name — it's the only, final version of the pipeline (the file has accumulated GroupKFold evaluation, target encoding, the feature-importance ablation, GP parsimony sweep, multi-seed robustness, and the `flow_direction` feature over the course of the project). Not done here since every script and this README reference the current filename; rename and update those references together if you want to do it.
 
 ---
 
@@ -242,14 +244,15 @@ mv traffic_flow_prediction_v2.py traffic_flow_prediction.py
 pip3 install -r requirements.txt
 ```
 
-The raw CSV should already be at `Traffic Intelligence/dft_rawcount_local_authority_id_141.csv` (downloaded from the [DfT road traffic statistics site](https://roadtraffic.dft.gov.uk/local-authorities/141)). If it moves, update `DATA_PATH` at the top of each script — each one currently hardcodes the same absolute path.
+The raw CSV should already be at `Traffic Intelligence/dft_rawcount_local_authority_id_141.csv` (downloaded from the [DfT road traffic statistics site](https://roadtraffic.dft.gov.uk/local-authorities/141)). If it moves, update `DATA_PATH` in `Traffic Intelligence/Code/traffic_common.py` — every script resolves it from there, so there's a single place to change.
 
-Run from the `FYP v.2` folder (so `outputs/` lands in the right place):
+Paths are resolved relative to the repository layout, not the current working directory, so these can be run from anywhere:
 
 ```bash
-python3 "Traffic Intelligence/Code/traffic_flow_prediction.py"   # main pipeline
-python3 "Traffic Intelligence/Code/junction_network.py"          # junction baseline network
-python3 "Traffic Intelligence/Code/junction_predictor.py"        # junction traffic predictor
+python3 "Traffic Intelligence/Code/traffic_flow_prediction_v2.py"   # main pipeline
+python3 "Traffic Intelligence/Code/junction_network.py"             # junction baseline network
+python3 "Traffic Intelligence/Code/junction_predictor.py"           # junction traffic predictor
+python3 "Traffic Intelligence/Code/junction_cli.py"                 # interactive junction query tool
 ```
 
 ---
@@ -258,7 +261,7 @@ python3 "Traffic Intelligence/Code/junction_predictor.py"        # junction traf
 
 - ~~Ablation: permutation importance with `count_point_id` excluded~~ — done; see Key Findings (4).
 - ~~Try a parsimony-constrained GP for a shorter, more interpretable expression~~ — done; see Key Findings (5).
-- ~~Extend to directional in/out-of-Birmingham modelling~~ — done via `flow_direction`; see the feature engineering in `traffic_flow_prediction.py`.
+- ~~Extend to directional in/out-of-Birmingham modelling~~ — done via `flow_direction`; see `traffic_common.add_engineered_features()`, shared by `traffic_flow_prediction_v2.py` and the junction scripts.
 - ~~Junction-level traffic prediction~~ — done; see the Extension section above.
 - ~~A true turning-movement breakdown at junctions~~ — not currently feasible; DfT's raw counts don't include the turning-movement or signal-timing data this would require. Documented as a permanent scope limitation rather than a to-do.
 - ~~Package the junction predictor as a small interactive tool~~ — done via `junction_cli.py`.

@@ -2,97 +2,72 @@ Feature Analysis
 
 Overview
 
-Feature importance analysis was performed using the trained Random Forest regression model.
+Feature importance was computed two ways on the tuned Random Forest model: **impurity-based** (built into scikit-learn, but known to be biased toward high-cardinality features) and **permutation-based** (refits nothing, but re-measures RMSE after shuffling each feature — more reliable, though slower). Numbers below are read directly from `outputs/feature_importance_impurity.csv` and `outputs/feature_importance_permutation.csv`.
 
-The purpose of this analysis was to identify which road, location, direction and time-related features had the greatest influence on predicted traffic flow in Birmingham.
-
-Feature importance values show the relative contribution of each transformed input feature to the Random Forest model. A higher value indicates that the feature was more useful when the model made traffic-flow predictions.
+Because `count_point_id` and `road_name` are **target encoded** (one numeric column each, not one-hot dummies per road), "feature importance" here is importance of the encoded column, not of any individual road or location — see `Feature_Engineering.md`.
 
 ⸻
 
-Most Important Features
+Full Model — Top Features
 
-The most influential features included:
+| Feature | Impurity | Permutation |
+|---|---:|---:|
+| count_point_id (target-encoded) | 40.9% | 65.1% |
+| road_name (target-encoded) | 22.3% | 12.3% |
+| road_type = Major (one-hot) | 11.3% | 3.1% |
+| road_type = Minor (one-hot) | 9.5% | 2.4% |
+| longitude | 6.7% | 2.3% |
+| latitude | 3.4% | 2.4% |
+| hour | 2.0% | 4.6% |
 
-1. Road type
-2. Road identity
-3. Count point location
-4. Year
-5. Hour of day
-6. Direction of travel
-7. Peak-hour indicators
+### Finding
 
-The strongest individual features were associated with whether a road was classified as a major or minor road, along with high-traffic routes such as the M6 and A38(M).
-
-⸻
-
-Road Type
-
-Road type was one of the most important predictors of traffic flow.
-
-The Random Forest model assigned high importance to both road_type_Major and road_type_Minor. This reflects the clear difference observed during exploratory data analysis:
-
-* Major roads had substantially higher average traffic flow.
-* Minor roads had lower average traffic flow.
-
-This makes sense because major roads include strategic routes and key urban corridors that carry larger volumes of vehicles.
+Both methods agree: the target-encoded `count_point_id` column dominates, by an even larger margin under permutation importance (65.1%) than impurity (40.9%). This is expected — `count_point_id`'s target-encoded value is close to that location's historical average traffic, so it's an extremely strong (almost circular) predictor. On its own this doesn't tell us *why* traffic varies — see the ablation below.
 
 ⸻
 
-Road Identity
+Ablation: Random Forest Without `count_point_id`
 
-Specific road names were also important.
+Refitting without the location column (README Key Finding 4) tells a more precise story:
 
-The M6 was one of the strongest road-level predictors. This is expected because the M6 carries much higher traffic volumes than many other roads in the Birmingham dataset.
+| Feature | Impurity | Permutation |
+|---|---:|---:|
+| road_name (target-encoded) | 38.5% | 58.6% |
+| longitude | 15.6% | 15.4% |
+| road_type = Minor (one-hot) | 14.3% | 7.6% |
+| road_type = Major (one-hot) | 13.3% | 6.6% |
+| latitude | 9.3% | 14.1% |
+| year | 3.6% | 4.6% |
+| hour | 2.2% | 4.6% |
 
-Other important roads included:
-
-* A38(M)
-* A38
-* A4540
-* A4400
-* A45
-
-These roads are important transport corridors within or around Birmingham and are likely to experience consistently higher traffic levels.
+Accuracy barely drops (R² 0.964 → 0.933, see `Model_Results.md`) once `count_point_id` is removed, and `road_name` immediately takes over as the dominant feature, followed by geographic coordinates. This means most of what `count_point_id` appeared to contribute was **recoverable from road identity and coordinates alone** — it was acting as a fine-grained proxy for information already present elsewhere, not contributing large amounts of genuinely new signal.
 
 ⸻
 
-Location and Count Points
+Road Identity and Road Type
 
-count_point_id, latitude and longitude were important features.
+Road identity (`road_name`) and classification (`road_type`) are consistently the strongest non-location predictors in both the full model and the ablation. This matches the EDA finding that a handful of roads — led by the M6 — carry disproportionately high traffic, and that major roads carry roughly 7x the traffic of minor roads on average (`EDA_Findings.md`).
 
-These variables allow the model to distinguish between different monitoring locations. Traffic flow varies significantly between locations because roads differ in their role, capacity, surrounding land use and connection to the wider road network.
+⸻
 
-The importance of location features suggests that traffic prediction should consider where a count point is located, not only the time or direction of travel.
+Location Coordinates
+
+`latitude` and `longitude` matter more once `count_point_id` is removed (their importance roughly doubles or more), consistent with them being a coarser, complementary source of the same geographic signal that `count_point_id` captures at finer granularity.
 
 ⸻
 
 Time-Related Features
 
-Year and hour were also influential.
-
-The hour feature reflects variation across the day. Exploratory analysis showed that traffic levels were generally higher during morning and afternoon commuting periods.
-
-The year feature may capture longer-term changes in traffic patterns, road use, transport behaviour and changes in the available count data over time.
-
-Peak-hour indicator features contributed less than the raw hour value. This suggests that the model benefits from knowing the exact hour rather than only whether a time falls within a broad peak period.
+`hour` and `year` are real but comparatively minor contributors (a few percent each) in both impurity and permutation terms — time-of-day and long-term trend matter, but far less than *where* the count point is and *what kind of road* it's on.
 
 ⸻
 
-Direction of Travel
+Direction
 
-Direction of travel was a useful but less influential feature compared with road type and road identity.
-
-The model used directional features such as northbound, southbound, eastbound and westbound movement to improve predictions. This supports the project focus on modelling directional traffic flow into and out of Birmingham.
-
-However, the lower importance compared with road type suggests that the characteristics of the road and count-point location have a greater overall effect on traffic volume.
+`direction_of_travel` and the engineered `flow_direction` feature do not appear in the top features by either importance measure for this model — road identity, classification and location dominate. This doesn't mean direction is irrelevant: the README's junction-level extension finds a clear, real AM/PM directional asymmetry at specific junctions (e.g. the A41's A4540 link), it's just a smaller effect than location/road-identity at the level of a single global regression model.
 
 ⸻
 
 Conclusion
 
-The feature analysis shows that Birmingham traffic flow is primarily influenced by road classification, road identity and monitoring location.
-
-Time of day, year and direction of travel also contribute to prediction accuracy, but their impact is smaller than the structural characteristics of the road network.
-
-These findings support the use of an explainable traffic-intelligence system, as they identify the main factors associated with traffic flow across Birmingham.
+Birmingham traffic flow is primarily driven by **where** a count point is and **what road** it's on — road identity and classification, then geography, then time. `count_point_id` alone looked dominant, but the ablation shows most of that was recoverable from road name and coordinates rather than being unique per-location signal. See README Key Finding 4 for the full discussion.

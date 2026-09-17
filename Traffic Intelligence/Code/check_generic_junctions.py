@@ -14,7 +14,8 @@ from itertools import combinations
 
 import pandas as pd
 
-DATA_PATH = "/Users/Alex/Documents/FYP v.2/Traffic Intelligence/dft_rawcount_local_authority_id_141.csv"
+from traffic_common import DATA_PATH, OUTPUT_DIR, build_road_name_lookup, canonical_road_name
+
 DISTANCE_THRESHOLD_KM = 3.0
 
 
@@ -27,18 +28,12 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return 2 * R * math.asin(math.sqrt(a))
 
 
-def canonical_road_name(name):
-    return "".join(ch for ch in str(name).upper() if ch.isalnum())
-
-
 df = pd.read_csv(DATA_PATH, low_memory=False)
 
 has_both = df["start_junction_road_name"].notna() & df["end_junction_road_name"].notna()
 subset = df[has_both].copy()
 
-canonical_lookup = {}
-for raw_name in subset["road_name"].unique():
-    canonical_lookup.setdefault(canonical_road_name(raw_name), raw_name)
+canonical_lookup = build_road_name_lookup(subset["road_name"])
 subset["road_name_canonical"] = subset["road_name"].apply(
     lambda n: canonical_lookup[canonical_road_name(n)]
 )
@@ -96,5 +91,5 @@ else:
 print(f"\n=== Top 15 labels by geographic spread (for manual review) ===")
 print(results_df.head(15).to_string(index=False))
 
-results_df.to_csv("outputs/junction_label_spread_check.csv", index=False)
-print("\nFull results saved to outputs/junction_label_spread_check.csv")
+results_df.to_csv(OUTPUT_DIR / "junction_label_spread_check.csv", index=False)
+print(f"\nFull results saved to {OUTPUT_DIR / 'junction_label_spread_check.csv'}")
